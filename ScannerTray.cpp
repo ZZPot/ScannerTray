@@ -77,7 +77,7 @@ LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 }
 LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 {
-	if ((uMsg == WM_RBUTTONUP) || (uMsg == WM_LBUTTONUP))
+	if (uMsg == WM_LBUTTONUP)
 	{
 		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
 		if (ti != nullptr)
@@ -86,6 +86,14 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 			GetCursorPos(&cur);
 			if (ti->ShowMenu(cur.x, cur.y) == IDC_EXIT)
 				SendMessage(hWnd, WM_CLOSE, 0, 0);
+		}
+	}
+	if (uMsg == WM_RBUTTONUP)
+	{
+		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
+		if (ti != nullptr)
+		{
+			ti->ShowPopup(_T("RMB pressed"));
 		}
 	}
 	return 0;

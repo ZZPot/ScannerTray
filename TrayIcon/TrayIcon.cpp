@@ -12,7 +12,7 @@ TrayIcon::TrayIcon(HWND hWnd, HWND hWndOwner, UINT uMessage, UINT uID, HINSTANCE
 	_nid.uID = uID;
 	_nid.uTimeout = 2000;
 	_nid.uCallbackMessage = uMessage;
-	_nid.dwInfoFlags = NIIF_INFO;
+	_nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
 	_tcsncpy_s(_nid.szInfoTitle, 64, DEFAULT_BLOON_TITLE, min(63, _tcslen(DEFAULT_BLOON_TITLE)));
 	//nid.uVersion = NOTIFYICON_VERSION;
 	if(hInst && uIcon)
@@ -62,13 +62,14 @@ VOID TrayIcon::Switch()
 VOID TrayIcon::ShowPopup(LPCTSTR info, LPCTSTR title)
 {
 	//NEED TO FIX THESE HARDCODED STRING LENGTH VALUES VVVVVV
-	_nid.uFlags |= NIF_INFO; // will add every time, it won't hurt, let it stay
+	_nid.uFlags |= NIF_INFO;
 	if(title != nullptr)
 		_tcsncpy_s(_nid.szInfoTitle, 64, title, min(63, _tcslen(title)));
 	else
 		_tcsncpy_s(_nid.szInfoTitle, 64, DEFAULT_BLOON_TITLE, min(63, _tcslen(DEFAULT_BLOON_TITLE)));
 	_tcsncpy_s(_nid.szInfo, 256, info, min(255, _tcslen(info)));
 	Shell_NotifyIcon(NIM_MODIFY, &_nid);
+	_nid.uFlags ^= NIF_INFO;
 }
 INT TrayIcon::ShowMenu(int x, int y)
 {
