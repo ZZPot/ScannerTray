@@ -10,7 +10,7 @@ TrayIcon::TrayIcon(HWND hWnd, HWND hWndOwner, UINT uMessage, UINT uID, HINSTANCE
 	_nid.uFlags = NIF_MESSAGE;
 	_nid.hWnd = hWndOwner;
 	_nid.uID = uID;
-	_nid.uTimeout = 2000;
+	//_nid.uTimeout = 2000;
 	_nid.uCallbackMessage = uMessage;
 	_nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
 	_tcsncpy_s(_nid.szInfoTitle, 64, DEFAULT_BLOON_TITLE, min(63, _tcslen(DEFAULT_BLOON_TITLE)));
@@ -75,5 +75,5 @@ INT TrayIcon::ShowMenu(int x, int y)
 {
 	if (_hMenu == NULL)
 		return 0;
-	return TrackPopupMenu(_hMenu, TPM_RETURNCMD, x, y, 0, _hWnd, nullptr);
+	return TrackPopupMenu(_hMenu, TPM_RETURNCMD | TPM_NONOTIFY, x, y, 0, _hWnd, nullptr);
 }
