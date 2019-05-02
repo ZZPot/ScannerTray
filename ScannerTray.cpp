@@ -4,19 +4,23 @@
 #include "resource.h"
 #include "TrayIcon\TrayIcon.h"
 #include "common.h"
-
+#include <algorithm>
 
 LRESULT CALLBACK MainWndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 LRESULT OnCreateMain(HWND hDlg, WPARAM wParam, LPARAM lParam);
 LRESULT OnTrayCommandMain(HWND hDlg, UINT uID, DWORD uMsg);
 LRESULT OnCloseMain(HWND hDlg);
 unsigned __stdcall ReadThreadFunc(PVOID arg);
+void SendString(std::tstring str);
 
 struct rtp
 {
 	HANDLE hEndEvent;
 	TrayIcon *ti;
 };
+
+CmdLine cmline;
+
 INT WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR ptCmdLine, int nCmdShow)
 {
 	HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, SCAN_PROC_EVENT);
@@ -36,7 +40,9 @@ INT WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR ptCmdLine, int nCmdShow)
 	RegisterClass(&wnd_class);
 	CreateWindow(MAIN_WINDOW_CNAME, _T(""), 0, 0, 0, 50, 50, NULL, NULL, NULL, 0);
 #pragma endregion
-	
+	cmline.AddOption(_T("-pref"), true, _T("prefix"));
+	cmline.AddOption(_T("-post"), true, _T("postfix"));
+	cmline.SetCmd(ptCmdLine);
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
@@ -112,10 +118,12 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 {
 	rtp* param = (rtp*)arg;
 #pragma region com handle
-	HANDLE com_port = CreateFile(_T("COM1"), GENERIC_ALL, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	// Нужен FILE_FLAG_OVERLAPPED для реального порта
+	// Через переходник FILE_FLAG_OVERLAPPED не работает, считыавение происходит постоянно.
+	HANDLE com_port = CreateFile(_T("COM5"), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (com_port == INVALID_HANDLE_VALUE)
 	{
-		param->ti->ShowPopup(_T("Can't open 'COM1'"));
+		param->ti->ShowPopup(_T("Can't open 'COM5'"));
 		return 1;
 	}
 	DCB serial_params = { 0 };
@@ -142,7 +150,7 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 	ZeroMemory(&ovr, sizeof(ovr));
 	ovr.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	HANDLE wait_duo[2] = { param->hEndEvent, ovr.hEvent };
-	std::tstring str = _T("");
+	
 	DWORD bytes_read = 0;
 	char data[BYTES_TO_READ_COM1 + 1];
 	data[BYTES_TO_READ_COM1] = '\0';
@@ -150,15 +158,44 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 	ReadFile(com_port, &data, BYTES_TO_READ_COM1, &bytes_read, &ovr);
 	while (WaitForMultipleObjects(2, wait_duo, false, INFINITE) != WAIT_OBJECT_0)
 	{
-		if (data[0] != '\0xa')
+		static std::tstring str = _T("");
+		if (bytes_read && data[0] != '\0xa')
 		{
+			if(str.length() == 16)
+			{
+				GetLastError();
+			}
+			bool more_data = (data[bytes_read-1] != '\n');
 			data[bytes_read] = '\0';
-			str = CharToTchar(data, CP_ACP);
-			param->ti->ShowPopup(str.c_str());
+			str += CharToTchar(data, CP_ACP);
+			if(!more_data)
+			{
+				str.erase(std::remove(str.begin(), str.end(), _T('\r')), str.end());
+				str.erase(std::remove(str.begin(), str.end(), _T('\n')), str.end());
+				if(str.length() != 0)
+				{
+					param->ti->ShowPopup(str.c_str());
+					str = cmline.GetString(_T("-pref")) + str + cmline.GetString(_T("-post"));
+					SendString(str);
+					str = _T("");
+				}
+			}
 		}
 		ReadFile(com_port, &data, BYTES_TO_READ_COM1, &bytes_read, &ovr);
 	}
 	CloseHandle(com_port);
 	delete param;
 	return 0;
+}
+
+void SendString(std::tstring str)
+{
+	HKL layout = LoadKeyboardLayout(_T("00000409"), KLF_ACTIVATE | KLF_NOTELLSHELL);
+	size_t len = str.length();
+	std::vector<INPUT> inp_v;
+	for(unsigned i = 0; i < len; i++)
+	{
+		MakeInputSeq(str[i], &inp_v);
+	}
+	SendInput(inp_v.size(), inp_v.data(), sizeof(INPUT));
 }
