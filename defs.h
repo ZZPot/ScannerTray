@@ -6,3 +6,4 @@
 #define ENDEVENT_PROP_NAME	_T("endevent_prop_name")
 #define IDC_EXIT	112
 #define MAIN_WINDOW_CNAME	_T("InvisibleWND")
+#define BYTES_TO_READ_COM1 30

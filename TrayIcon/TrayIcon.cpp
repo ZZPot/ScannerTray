@@ -75,5 +75,6 @@ INT TrayIcon::ShowMenu(int x, int y)
 {
 	if (_hMenu == NULL)
 		return 0;
+	SetForegroundWindow(_nid.hWnd);
 	return TrackPopupMenu(_hMenu, TPM_RETURNCMD | TPM_NONOTIFY, x, y, 0, _hWnd, nullptr);
 }

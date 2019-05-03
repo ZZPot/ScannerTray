@@ -84,6 +84,7 @@ LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 }
 LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 {
+	static bool menu_visible = false;
 	if (uMsg == WM_LBUTTONUP)
 	{
 		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
@@ -93,14 +94,6 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 			GetCursorPos(&cur);
 			if (ti->ShowMenu(cur.x, cur.y) == IDC_EXIT)
 				SendMessage(hWnd, WM_CLOSE, 0, 0);
-		}
-	}
-	if (uMsg == WM_RBUTTONUP)
-	{
-		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
-		if (ti != nullptr)
-		{
-			ti->ShowPopup(_T("RMB pressed"));
 		}
 	}
 	return 0;
@@ -131,7 +124,8 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 	if (!GetCommState(com_port, &serial_params))
 	{
 		param->ti->ShowPopup(_T("Getting state error"));
-		return 1; // Ваще поебать на закрытие хендла, это грязнокод
+		CloseHandle(com_port);
+		return 1;
 	}
 	serial_params.BaudRate = CBR_9600;
 	serial_params.ByteSize = 8;
