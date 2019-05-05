@@ -2,8 +2,11 @@
 //#define _WIN32_IE 0x0600
 #include <windows.h>
 #include <tchar.h>
+#include <vector>
+#include <map>
 
 #define DEFAULT_BLOON_TITLE _T("Info")
+#define DEFAULT_ANIM_RATE	16
 
 class TrayIcon
 {
@@ -13,8 +16,9 @@ public:
 	VOID Minimize();
 	VOID Restore();
 	VOID Switch();
-	VOID ShowPopup(LPCTSTR info, LPCTSTR title = nullptr);
+	VOID ShowBaloon(LPCTSTR info, LPCTSTR title = nullptr);
 	INT  ShowMenu(int x, int y);
+
 protected:
 	HWND _hWnd;
 	NOTIFYICONDATA _nid;
@@ -22,4 +26,37 @@ protected:
 	HMENU _hMenu;
 	BOOL _bConstant;
 	BOOL _bMinimized;
+};
+
+class IconAnimator
+{
+public:
+	IconAnimator();
+	virtual ~IconAnimator();
+public:
+	static bool SetRate(unsigned new_rate);
+	static int Animate(std::vector<HICON> icons, HICON default_icon, UINT icon_id, HWND owner, bool loop = false);
+	static bool Start(int anim_id);
+	static bool Pause(int anim_id);
+	static bool Stop(int anim_id);
+protected:
+	static unsigned __stdcall AnimThreadFunc(PVOID arg);
+public:
+	static void UpdateAnimState();
+	struct icon_anim
+	{
+		std::vector<HICON> icons;
+		HICON default_icon;
+		UINT icon_id;
+		HWND owner;
+		unsigned stage;
+		bool active;
+		bool loop;
+	};
+protected:
+	static std::map<int, icon_anim> _anims;
+	static unsigned _rate;
+	static HANDLE _stop_event;
+	static HANDLE _timer;
+	static int _next_id;
 };

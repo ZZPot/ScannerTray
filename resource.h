@@ -3,6 +3,14 @@
 // Used by ScannerTray.rc
 //
 #define IDI_TRAY                        101
+#define IDI_TRAY1                       102
+#define IDI_TRAY2                       103
+#define IDI_TRAY3                       104
+#define IDI_TRAY4                       105
+#define IDI_TRAY5                       106
+#define IDI_TRAY6                       107
+#define IDI_TRAY7                       108
+#define IDI_TRAY8                       109
 
 // Next default values for new objects
 // 

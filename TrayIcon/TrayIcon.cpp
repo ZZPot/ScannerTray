@@ -1,6 +1,7 @@
 #include "TrayIcon.h"
 #include <tchar.h>
-#pragma warning(disable: 4996)
+#include "common.h"
+#pragma warning(disable: 4996 4267)
 
 TrayIcon::TrayIcon(HWND hWnd, HWND hWndOwner, UINT uMessage, UINT uID, HINSTANCE hInst, UINT uIcon, LPCTSTR tTip, BOOL bConstant, HMENU hMenu):
 	_hWnd(hWnd), _bConstant(bConstant), _hMenu(hMenu)
@@ -59,7 +60,7 @@ VOID TrayIcon::Switch()
 	else
 		Minimize();
 }
-VOID TrayIcon::ShowPopup(LPCTSTR info, LPCTSTR title)
+VOID TrayIcon::ShowBaloon(LPCTSTR info, LPCTSTR title)
 {
 	//NEED TO FIX THESE HARDCODED STRING LENGTH VALUES VVVVVV
 	_nid.uFlags |= NIF_INFO;
@@ -78,3 +79,124 @@ INT TrayIcon::ShowMenu(int x, int y)
 	SetForegroundWindow(_nid.hWnd);
 	return TrackPopupMenu(_hMenu, TPM_RETURNCMD | TPM_NONOTIFY, x, y, 0, _hWnd, nullptr);
 }
+
+IconAnimator::IconAnimator()
+{
+	_stop_event = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	_timer = CreateWaitableTimer(nullptr, FALSE, nullptr);
+	SetRate(_rate);
+	unsigned tid;
+	BeginThreadEx(NULL, 0, IconAnimator::AnimThreadFunc, nullptr, 0, &tid);
+}
+IconAnimator::~IconAnimator()
+{
+	SetEvent(_stop_event);
+	CloseHandle(_stop_event);
+	CloseHandle(_timer);
+}
+
+bool IconAnimator::SetRate(unsigned new_rate)
+{
+	if (new_rate <= 0)
+		return false;
+	_rate = new_rate;
+	LARGE_INTEGER li;
+	li.QuadPart = 0;
+	SetWaitableTimer(_timer, &li, 1000 / new_rate, nullptr, nullptr, false);
+	return true;
+}
+int IconAnimator::Animate(std::vector<HICON> icons, HICON default_icon, UINT icon_id, HWND owner, bool loop)
+{
+	int res = _next_id++;
+	_anims[res].icons = icons;
+	_anims[res].icon_id = icon_id;
+	_anims[res].owner = owner;
+	_anims[res].default_icon = default_icon;
+	_anims[res].active = false;
+	_anims[res].loop = loop;
+	return res;
+}
+bool IconAnimator::Start(int anim_id)
+{
+	auto anim = _anims.find(anim_id);
+	if (anim != _anims.end())
+	{
+		anim->second.active = true;
+		return true;
+	}
+	return false;
+}
+bool IconAnimator::Pause(int anim_id)
+{
+	auto anim = _anims.find(anim_id);
+	if (anim != _anims.end())
+	{
+		anim->second.active = false;
+		return true;
+	}
+	return false;
+}
+bool IconAnimator::Stop(int anim_id)
+{
+	auto anim = _anims.find(anim_id);
+	if (anim != _anims.end())
+	{
+		anim->second.active = false;
+		anim->second.stage = 0;
+		return true;
+	}
+	return false;
+}
+void IconAnimator::UpdateAnimState()
+{
+	NOTIFYICONDATA nid;
+	memset(&nid, 0, sizeof(nid));
+	nid.cbSize = sizeof(nid);
+	nid.uFlags = NIF_ICON;
+	if (!_anims.size()) // some crap error on for-loop
+		return;
+	for (auto& anim : _anims)
+	{
+		if (!anim.second.active)
+			continue;
+		unsigned anim_size = anim.second.icons.size();
+		nid.hWnd = anim.second.owner;
+		nid.uID = anim.second.icon_id;
+		bool reset = false;
+		if (anim.second.stage >= anim_size)
+		{
+			anim.second.stage = 0;
+			if (!anim.second.loop)
+				reset = true;
+		}
+		if (reset)
+		{
+			nid.hIcon = anim.second.default_icon;
+			anim.second.active = false;
+		}
+		else
+		{
+			unsigned icon_num = anim.second.stage++;
+			nid.hIcon = anim.second.icons[icon_num];
+		}
+		Shell_NotifyIcon(NIM_MODIFY, &nid);
+	}
+}
+unsigned __stdcall IconAnimator::AnimThreadFunc(PVOID arg)
+{
+	HANDLE wait_duo[2] = { _stop_event, _timer};
+	while (1)
+	{
+		DWORD wait = WaitForMultipleObjects(2, wait_duo, FALSE, INFINITE);
+		if (wait == 0)
+			break;
+		UpdateAnimState();
+	}
+	return 0;
+}
+
+std::map<int, IconAnimator::icon_anim> IconAnimator::_anims;
+HANDLE IconAnimator::_stop_event;
+HANDLE IconAnimator::_timer;
+unsigned IconAnimator::_rate = DEFAULT_ANIM_RATE;
+int IconAnimator::_next_id = 1;

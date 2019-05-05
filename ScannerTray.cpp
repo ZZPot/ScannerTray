@@ -6,13 +6,14 @@
 #include "common.h"
 #include <algorithm>
 
+IconAnimator asd;
 LRESULT CALLBACK MainWndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 LRESULT OnCreateMain(HWND hDlg, WPARAM wParam, LPARAM lParam);
 LRESULT OnTrayCommandMain(HWND hDlg, UINT uID, DWORD uMsg);
 LRESULT OnCloseMain(HWND hDlg);
 unsigned __stdcall ReadThreadFunc(PVOID arg);
 void SendString(std::tstring str);
-
+std::vector<HICON> LoadIcons(UINT initial, unsigned count); // All resources should be "packed"
 struct rtp
 {
 	HANDLE hEndEvent;
@@ -74,6 +75,10 @@ LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	AppendMenu(hPopupMenu, MF_STRING, IDC_EXIT, _T("Exit"));
 
 	TrayIcon* ti = new TrayIcon(hWnd, hWnd, TRAY_MSG, TRAY_OBJ, GetModuleHandle(NULL), IDI_TRAY, _T("Barcode scanner"), TRUE, hPopupMenu);
+
+	std::vector<HICON> icon_anim = LoadIcons(IDI_TRAY1, 8);
+	IconAnimator::Animate(icon_anim, (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_TRAY), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR | LR_DEFAULTSIZE), TRAY_OBJ, hWnd);
+
 	SetProp(hWnd, TRAY_PROP_NAME, (HANDLE)ti);
 	rtp* param = new rtp;
 	param->hEndEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -96,6 +101,10 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 				SendMessage(hWnd, WM_CLOSE, 0, 0);
 		}
 	}
+	if (uMsg == WM_RBUTTONUP)
+	{
+		IconAnimator::Start(1);
+	}
 	return 0;
 }
 LRESULT OnCloseMain(HWND hWnd)
@@ -116,14 +125,14 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 	HANDLE com_port = CreateFile(_T("COM5"), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (com_port == INVALID_HANDLE_VALUE)
 	{
-		param->ti->ShowPopup(_T("Can't open 'COM5'"));
+		param->ti->ShowBaloon(_T("Can't open 'COM5'"));
 		return 1;
 	}
 	DCB serial_params = { 0 };
 	serial_params.DCBlength = sizeof(DCB);
 	if (!GetCommState(com_port, &serial_params))
 	{
-		param->ti->ShowPopup(_T("Getting state error"));
+		param->ti->ShowBaloon(_T("Getting state error"));
 		CloseHandle(com_port);
 		return 1;
 	}
@@ -133,7 +142,7 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 	serial_params.Parity = NOPARITY;
 	if (!SetCommState(com_port, &serial_params))
 	{
-		param->ti->ShowPopup(_T("Setting state error"));
+		param->ti->ShowBaloon(_T("Setting state error"));
 		return 1;
 	}
 	COMMTIMEOUTS timeouts = { 0 };
@@ -168,7 +177,7 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 				str.erase(std::remove(str.begin(), str.end(), _T('\n')), str.end());
 				if(str.length() != 0)
 				{
-					param->ti->ShowPopup(str.c_str());
+					param->ti->ShowBaloon(str.c_str());
 					str = cmline.GetString(_T("-pref")) + str + cmline.GetString(_T("-post"));
 					SendString(str);
 					str = _T("");
@@ -192,4 +201,14 @@ void SendString(std::tstring str)
 		MakeInputSeq(str[i], &inp_v);
 	}
 	SendInput(inp_v.size(), inp_v.data(), sizeof(INPUT));
+}
+std::vector<HICON> LoadIcons(UINT initial, unsigned count)
+{
+	std::vector<HICON> res;
+	HINSTANCE inst = GetModuleHandle(NULL);
+	for (unsigned i = 0; i < count; i++)
+	{
+		res.push_back((HICON)LoadImage(inst, MAKEINTRESOURCE(initial + i), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR | LR_DEFAULTSIZE));
+	}
+	return res;
 }
