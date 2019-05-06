@@ -6,7 +6,6 @@
 #include "common.h"
 #include <algorithm>
 
-IconAnimator asd;
 LRESULT CALLBACK MainWndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 LRESULT OnCreateMain(HWND hDlg, WPARAM wParam, LPARAM lParam);
 LRESULT OnTrayCommandMain(HWND hDlg, UINT uID, DWORD uMsg);
@@ -74,11 +73,9 @@ LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	HMENU hPopupMenu = CreatePopupMenu();
 	AppendMenu(hPopupMenu, MF_STRING, IDC_EXIT, _T("Exit"));
 
-	TrayIcon* ti = new TrayIcon(hWnd, hWnd, TRAY_MSG, TRAY_OBJ, GetModuleHandle(NULL), IDI_TRAY, _T("Barcode scanner"), TRUE, hPopupMenu);
-
+	TrayIcon* ti = new TrayIcon(hWnd, TRAY_MSG, TRAY_OBJ, GetModuleHandle(NULL), IDI_TRAY, _T("Barcode scanner"), TRUE, hPopupMenu);
 	std::vector<HICON> icon_anim = LoadIcons(IDI_TRAY1, 8);
-	IconAnimator::Animate(icon_anim, (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_TRAY), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR | LR_DEFAULTSIZE), TRAY_OBJ, hWnd);
-
+	ti->Animate(icon_anim);
 	SetProp(hWnd, TRAY_PROP_NAME, (HANDLE)ti);
 	rtp* param = new rtp;
 	param->hEndEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -103,7 +100,11 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 	}
 	if (uMsg == WM_RBUTTONUP)
 	{
-		IconAnimator::Start(1);
+		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
+		if (ti != nullptr)
+		{
+			ti->StartAnim();
+		}
 	}
 	return 0;
 }

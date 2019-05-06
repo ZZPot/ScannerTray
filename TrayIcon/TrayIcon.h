@@ -11,14 +11,16 @@
 class TrayIcon
 {
 public:
-	TrayIcon(HWND hWnd, HWND hWndOwner, UINT uMessage, UINT uID, HINSTANCE hInst = NULL, UINT uIcon = 0, LPCTSTR tTip = nullptr, BOOL bConstant = FALSE, HMENU hMenu = NULL);
+	TrayIcon(HWND hWnd, UINT uMessage, UINT uID, HINSTANCE hInst = NULL, UINT uIcon = 0, LPCTSTR tTip = nullptr, BOOL bConstant = FALSE, HMENU hMenu = NULL);
 	~TrayIcon();
 	VOID Minimize();
 	VOID Restore();
 	VOID Switch();
 	VOID ShowBaloon(LPCTSTR info, LPCTSTR title = nullptr);
 	INT  ShowMenu(int x, int y);
-
+	void Animate(std::vector<HICON> icons, bool loop = false);
+	bool StartAnim();
+	bool StopAnim();
 protected:
 	HWND _hWnd;
 	NOTIFYICONDATA _nid;
@@ -26,6 +28,7 @@ protected:
 	HMENU _hMenu;
 	BOOL _bConstant;
 	BOOL _bMinimized;
+	int _anim_id;
 };
 
 class IconAnimator
@@ -41,7 +44,6 @@ public:
 	static bool Stop(int anim_id);
 protected:
 	static unsigned __stdcall AnimThreadFunc(PVOID arg);
-public:
 	static void UpdateAnimState();
 	struct icon_anim
 	{
@@ -59,4 +61,6 @@ protected:
 	static HANDLE _stop_event;
 	static HANDLE _timer;
 	static int _next_id;
+private:
+	static IconAnimator* _inst;
 };

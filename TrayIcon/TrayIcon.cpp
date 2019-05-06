@@ -3,13 +3,13 @@
 #include "common.h"
 #pragma warning(disable: 4996 4267)
 
-TrayIcon::TrayIcon(HWND hWnd, HWND hWndOwner, UINT uMessage, UINT uID, HINSTANCE hInst, UINT uIcon, LPCTSTR tTip, BOOL bConstant, HMENU hMenu):
-	_hWnd(hWnd), _bConstant(bConstant), _hMenu(hMenu)
+TrayIcon::TrayIcon(HWND hWnd, UINT uMessage, UINT uID, HINSTANCE hInst, UINT uIcon, LPCTSTR tTip, BOOL bConstant, HMENU hMenu):
+	_hWnd(hWnd), _bConstant(bConstant), _hMenu(hMenu), _anim_id(-1)
 {
 	memset(&_nid, 0, sizeof(_nid));
 	_nid.cbSize = sizeof(_nid);
 	_nid.uFlags = NIF_MESSAGE;
-	_nid.hWnd = hWndOwner;
+	_nid.hWnd = _hWnd;
 	_nid.uID = uID;
 	//_nid.uTimeout = 2000;
 	_nid.uCallbackMessage = uMessage;
@@ -79,6 +79,23 @@ INT TrayIcon::ShowMenu(int x, int y)
 	SetForegroundWindow(_nid.hWnd);
 	return TrackPopupMenu(_hMenu, TPM_RETURNCMD | TPM_NONOTIFY, x, y, 0, _hWnd, nullptr);
 }
+void TrayIcon::Animate(std::vector<HICON> icons, bool loop)
+{
+	_anim_id = IconAnimator::Animate(icons, _nid.hIcon, _nid.uID, _hWnd);
+
+}
+bool TrayIcon::StartAnim()
+{
+	if (_anim_id == -1)
+		return false;
+	return IconAnimator::Start(_anim_id);
+}
+bool TrayIcon::StopAnim()
+{
+	if (_anim_id == -1)
+		return false;
+	return IconAnimator::Stop(_anim_id);
+}
 
 IconAnimator::IconAnimator()
 {
@@ -94,9 +111,10 @@ IconAnimator::~IconAnimator()
 	CloseHandle(_stop_event);
 	CloseHandle(_timer);
 }
-
 bool IconAnimator::SetRate(unsigned new_rate)
 {
+	if (_timer == NULL)
+		return false;
 	if (new_rate <= 0)
 		return false;
 	_rate = new_rate;
@@ -107,6 +125,8 @@ bool IconAnimator::SetRate(unsigned new_rate)
 }
 int IconAnimator::Animate(std::vector<HICON> icons, HICON default_icon, UINT icon_id, HWND owner, bool loop)
 {
+	if (_inst == nullptr)
+		_inst = new IconAnimator;
 	int res = _next_id++;
 	_anims[res].icons = icons;
 	_anims[res].icon_id = icon_id;
@@ -118,6 +138,8 @@ int IconAnimator::Animate(std::vector<HICON> icons, HICON default_icon, UINT ico
 }
 bool IconAnimator::Start(int anim_id)
 {
+	if (_inst == nullptr)
+		return false;
 	auto anim = _anims.find(anim_id);
 	if (anim != _anims.end())
 	{
@@ -128,6 +150,8 @@ bool IconAnimator::Start(int anim_id)
 }
 bool IconAnimator::Pause(int anim_id)
 {
+	if (_inst == nullptr)
+		return false;
 	auto anim = _anims.find(anim_id);
 	if (anim != _anims.end())
 	{
@@ -138,6 +162,8 @@ bool IconAnimator::Pause(int anim_id)
 }
 bool IconAnimator::Stop(int anim_id)
 {
+	if (_inst == nullptr)
+		return false;
 	auto anim = _anims.find(anim_id);
 	if (anim != _anims.end())
 	{
@@ -149,6 +175,8 @@ bool IconAnimator::Stop(int anim_id)
 }
 void IconAnimator::UpdateAnimState()
 {
+	if (_inst == nullptr)
+		return;
 	NOTIFYICONDATA nid;
 	memset(&nid, 0, sizeof(nid));
 	nid.cbSize = sizeof(nid);
@@ -196,7 +224,9 @@ unsigned __stdcall IconAnimator::AnimThreadFunc(PVOID arg)
 }
 
 std::map<int, IconAnimator::icon_anim> IconAnimator::_anims;
-HANDLE IconAnimator::_stop_event;
-HANDLE IconAnimator::_timer;
+HANDLE IconAnimator::_stop_event = NULL;
+HANDLE IconAnimator::_timer = NULL;
 unsigned IconAnimator::_rate = DEFAULT_ANIM_RATE;
 int IconAnimator::_next_id = 1;
+
+IconAnimator* IconAnimator::_inst = nullptr;
