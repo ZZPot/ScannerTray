@@ -96,7 +96,26 @@ bool TrayIcon::StopAnim()
 		return false;
 	return IconAnimator::Stop(_anim_id);
 }
-
+bool  TrayIcon::Check(unsigned id)
+{
+	MENUITEMINFO mii;
+	memset(&mii, 0, sizeof(mii));
+	mii.cbSize = sizeof(mii);
+	mii.fMask = MIIM_STATE;
+	mii.fType = MIIM_STRING;
+	mii.fState = MFS_CHECKED;
+	return SetMenuItemInfo(_hMenu, id, false, &mii);
+}
+bool TrayIcon::Uncheck(unsigned id)
+{
+	MENUITEMINFO mii;
+	memset(&mii, 0, sizeof(mii));
+	mii.cbSize = sizeof(mii);
+	mii.fMask = MIIM_STATE;
+	mii.fType = MIIM_STRING;
+	mii.fState = MFS_UNCHECKED;
+	return SetMenuItemInfo(_hMenu, id, false, &mii);
+}
 IconAnimator::IconAnimator()
 {
 	_stop_event = CreateEvent(nullptr, TRUE, FALSE, nullptr);
@@ -134,6 +153,7 @@ int IconAnimator::Animate(std::vector<HICON> icons, HICON default_icon, UINT ico
 	_anims[res].default_icon = default_icon;
 	_anims[res].active = false;
 	_anims[res].loop = loop;
+	_anims[res].stage = 0;
 	return res;
 }
 bool IconAnimator::Start(int anim_id)

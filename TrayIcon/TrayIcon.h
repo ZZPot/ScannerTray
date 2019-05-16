@@ -21,6 +21,8 @@ public:
 	void Animate(std::vector<HICON> icons, bool loop = false);
 	bool StartAnim();
 	bool StopAnim();
+	bool Check(unsigned id);
+	bool Uncheck(unsigned id);
 protected:
 	HWND _hWnd;
 	NOTIFYICONDATA _nid;

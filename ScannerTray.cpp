@@ -13,9 +13,21 @@ LRESULT OnCloseMain(HWND hDlg);
 unsigned __stdcall ReadThreadFunc(PVOID arg);
 void SendString(std::tstring str);
 std::vector<HICON> LoadIcons(UINT initial, unsigned count); // All resources should be "packed"
+std::vector<unsigned> GetCOMdevices();
+HANDLE OpenComDevice(unsigned dev_id);
+std::tstring MakeCOMName(unsigned dev_id);
 struct rtp
 {
+	~rtp() // just for handle this handles, lol
+	{
+		CloseHandle(hEndEvent);
+		CloseHandle(hDevSelectEvent);
+		if (ti != nullptr)
+			delete ti;
+	}
 	HANDLE hEndEvent;
+	HANDLE hDevSelectEvent;
+	unsigned cur_dev;
 	TrayIcon *ti;
 };
 
@@ -71,15 +83,22 @@ LRESULT CALLBACK MainWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 {
 	HMENU hPopupMenu = CreatePopupMenu();
-	AppendMenu(hPopupMenu, MF_STRING, IDC_EXIT, _T("Exit"));
+	/* - Добавить пункты меню с COM устройствами*/
+	auto devices = GetCOMdevices();
+	for(auto dev: devices)
+	{
+		AppendMenu(hPopupMenu, MF_STRING, IDC_COM + dev, MakeCOMName(dev).c_str());
+	}
+	AppendMenu(hPopupMenu, MF_STRING, IDC_EXIT, _T("Exit")); 
 
 	TrayIcon* ti = new TrayIcon(hWnd, TRAY_MSG, TRAY_OBJ, GetModuleHandle(NULL), IDI_TRAY, _T("Barcode scanner"), TRUE, hPopupMenu);
 	std::vector<HICON> icon_anim = LoadIcons(IDI_TRAY1, 8);
 	ti->Animate(icon_anim);
-	SetProp(hWnd, TRAY_PROP_NAME, (HANDLE)ti);
 	rtp* param = new rtp;
 	param->hEndEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	param->hDevSelectEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	param->ti = ti;
+	SetProp(hWnd, TRAY_PROP_NAME, (HANDLE)param);
 	unsigned tid;
 	BeginThreadEx(NULL, 0, ReadThreadFunc, param, 0, &tid);
 	return 0;
@@ -89,106 +108,121 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 	static bool menu_visible = false;
 	if (uMsg == WM_LBUTTONUP)
 	{
-		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
-		if (ti != nullptr)
+		rtp* rp = (rtp*)GetProp(hWnd, TRAY_PROP_NAME);
+		if (rp != nullptr)
 		{
 			POINT cur;
 			GetCursorPos(&cur);
-			if (ti->ShowMenu(cur.x, cur.y) == IDC_EXIT)
+			INT menu_sel = rp->ti->ShowMenu(cur.x, cur.y);
+			if(menu_sel == IDC_EXIT)
 				SendMessage(hWnd, WM_CLOSE, 0, 0);
+			if (menu_sel <= IDC_COM + 255 && menu_sel >= IDC_COM + 1)
+			{
+				rtp* rp = (rtp*)GetProp(hWnd, TRAY_PROP_NAME);
+				if (rp != nullptr)
+				{
+					rp->ti->Uncheck(rp->cur_dev + IDC_COM);
+					rp->cur_dev = menu_sel - IDC_COM;
+					rp->ti->Check(menu_sel);
+					SetEvent(rp->hDevSelectEvent);
+				}
+			}
 		}
 	}
-	if (uMsg == WM_RBUTTONUP)
+	/*if (uMsg == WM_RBUTTONUP)
 	{
-		TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
-		if (ti != nullptr)
-		{
-			ti->StartAnim();
-		}
+	TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
+	if (ti != nullptr)
+	{
+	ti->StartAnim();
 	}
+	}*/	
 	return 0;
 }
 LRESULT OnCloseMain(HWND hWnd)
 {
 	EndDialog(hWnd, 0);
-	TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
-	if (ti != nullptr)
-		delete ti;
+	rtp* rp = (rtp*)GetProp(hWnd, TRAY_PROP_NAME);
+	if (rp != nullptr)
+	{
+		delete rp;
+	}
 	PostQuitMessage(0);
 	return 0;
 }
 unsigned __stdcall ReadThreadFunc(PVOID arg)
 {
 	rtp* param = (rtp*)arg;
-#pragma region com handle
-	// Нужен FILE_FLAG_OVERLAPPED для реального порта
-	// Через переходник FILE_FLAG_OVERLAPPED не работает, считыавение происходит постоянно.
-	HANDLE com_port = CreateFile(_T("COM5"), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (com_port == INVALID_HANDLE_VALUE)
+	HANDLE wait_pack[3] = { param->hEndEvent, param->hDevSelectEvent, NULL };
+	DWORD wait_res;
+	HANDLE com_port = INVALID_HANDLE_VALUE;
+	while (com_port == INVALID_HANDLE_VALUE)
 	{
-		param->ti->ShowBaloon(_T("Can't open 'COM5'"));
-		return 1;
+		wait_res = WaitForMultipleObjects(2, wait_pack, false, INFINITE);
+		if(wait_res == WAIT_OBJECT_0) // closed without making any action
+		{
+			return 0;
+		}
+		com_port = OpenComDevice(param->cur_dev);
 	}
-	DCB serial_params = { 0 };
-	serial_params.DCBlength = sizeof(DCB);
-	if (!GetCommState(com_port, &serial_params))
-	{
-		param->ti->ShowBaloon(_T("Getting state error"));
-		CloseHandle(com_port);
-		return 1;
-	}
-	serial_params.BaudRate = CBR_9600;
-	serial_params.ByteSize = 8;
-	serial_params.StopBits = ONESTOPBIT;
-	serial_params.Parity = NOPARITY;
-	if (!SetCommState(com_port, &serial_params))
-	{
-		param->ti->ShowBaloon(_T("Setting state error"));
-		return 1;
-	}
-	COMMTIMEOUTS timeouts = { 0 };
-	timeouts.ReadIntervalTimeout = 300;
-	SetCommTimeouts(com_port, &timeouts);
-#pragma endregion	
+	DWORD bytes_read = 0;
+	char data[BYTES_TO_READ_COM1 + 1];
+	memset(data, 0, BYTES_TO_READ_COM1 + 1);
 	OVERLAPPED ovr;
 	ZeroMemory(&ovr, sizeof(ovr));
 	ovr.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	HANDLE wait_duo[2] = { param->hEndEvent, ovr.hEvent };
-	
-	DWORD bytes_read = 0;
-	char data[BYTES_TO_READ_COM1 + 1];
-	data[BYTES_TO_READ_COM1] = '\0';
-	memset(data, 0, BYTES_TO_READ_COM1 + 1);
+	wait_pack[2] = ovr.hEvent; // full pack is ready
 	ReadFile(com_port, &data, BYTES_TO_READ_COM1, &bytes_read, &ovr);
-	while (WaitForMultipleObjects(2, wait_duo, false, INFINITE) != WAIT_OBJECT_0)
+	while (1)
 	{
-		static std::tstring str = _T("");
-		if (bytes_read && data[0] != '\0xa')
+		wait_res = WaitForMultipleObjects(3, wait_pack, false, INFINITE);
+		if (wait_res == WAIT_OBJECT_0)
 		{
-			if(str.length() == 16)
+			break;
+		}
+		if (wait_res == WAIT_OBJECT_0+2)
+		{
+			static std::tstring str = _T("");
+			if (bytes_read && data[0] != '\0xa')
 			{
-				GetLastError();
-			}
-			bool more_data = (data[bytes_read-1] != '\n');
-			data[bytes_read] = '\0';
-			str += CharToTchar(data, CP_ACP);
-			if(!more_data)
-			{
-				str.erase(std::remove(str.begin(), str.end(), _T('\r')), str.end());
-				str.erase(std::remove(str.begin(), str.end(), _T('\n')), str.end());
-				if(str.length() != 0)
+				if(str.length() == 16)
 				{
-					param->ti->ShowBaloon(str.c_str());
-					str = cmline.GetString(_T("-pref")) + str + cmline.GetString(_T("-post"));
-					SendString(str);
-					str = _T("");
+					GetLastError();
 				}
+				bool more_data = (data[bytes_read-1] != '\n');
+				data[bytes_read] = '\0';
+				str += CharToTchar(data, CP_ACP);
+				if(!more_data)
+				{
+					str.erase(std::remove(str.begin(), str.end(), _T('\r')), str.end());
+					str.erase(std::remove(str.begin(), str.end(), _T('\n')), str.end());
+					if(str.length() != 0)
+					{
+						param->ti->StartAnim();
+						param->ti->ShowBaloon(str.c_str());
+						str = cmline.GetString(_T("-pref")) + str + cmline.GetString(_T("-post"));
+						SendString(str);
+						str = _T("");
+					}
+				}
+			}
+		}
+		if (wait_res == WAIT_OBJECT_0 + 1)
+		{
+			CloseHandle(ovr.hEvent);
+			CloseHandle(com_port);
+			ovr.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+			wait_pack[2] = ovr.hEvent;
+			com_port = OpenComDevice(param->cur_dev);
+			if(com_port == INVALID_HANDLE_VALUE)
+			{
+				param->ti->ShowBaloon(_T("Can't select device"));
 			}
 		}
 		ReadFile(com_port, &data, BYTES_TO_READ_COM1, &bytes_read, &ovr);
 	}
+	CloseHandle(ovr.hEvent);
 	CloseHandle(com_port);
-	delete param;
 	return 0;
 }
 
@@ -212,4 +246,71 @@ std::vector<HICON> LoadIcons(UINT initial, unsigned count)
 		res.push_back((HICON)LoadImage(inst, MAKEINTRESOURCE(initial + i), IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR | LR_DEFAULTSIZE));
 	}
 	return res;
+}
+std::vector<unsigned> GetCOMdevices()
+{
+	std::vector<unsigned> res;
+	for (unsigned i = 1; i<256; i++)
+	{
+		HANDLE dev = CreateFile(MakeCOMName(i).c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+		if (dev == INVALID_HANDLE_VALUE)
+		{
+			DWORD dwError = GetLastError();
+			if ((dwError != ERROR_ACCESS_DENIED) &&
+				(dwError != ERROR_GEN_FAILURE) && 
+				(dwError != ERROR_SHARING_VIOLATION) && 
+				(dwError != ERROR_SEM_TIMEOUT))
+			{
+				continue;
+			}
+		}
+		res.push_back(i);
+		CloseHandle(dev);
+	}
+	return res;
+}
+HANDLE OpenComDevice(unsigned dev_id)
+{
+#pragma region com handle
+	// Нужен FILE_FLAG_OVERLAPPED для реального порта
+	// Через переходник FILE_FLAG_OVERLAPPED не работает, считыавение происходит постоянно.
+	// Проблема в определении типа устройства
+	// Данное решение определяет тип устройства по его номеру
+	DWORD flags;
+	if(dev_id < 5)
+		flags = FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED;
+	else
+		flags = FILE_ATTRIBUTE_NORMAL;
+	HANDLE com_port = CreateFile(MakeCOMName(dev_id).c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, flags, nullptr);
+	if (com_port == INVALID_HANDLE_VALUE)
+	{
+		return com_port;
+	}
+	DCB serial_params = { 0 };
+	serial_params.DCBlength = sizeof(DCB);
+	if (!GetCommState(com_port, &serial_params))
+	{
+		CloseHandle(com_port);
+		return INVALID_HANDLE_VALUE;
+	}
+	serial_params.BaudRate = CBR_9600;
+	serial_params.ByteSize = 8;
+	serial_params.StopBits = ONESTOPBIT;
+	serial_params.Parity = NOPARITY;
+	if (!SetCommState(com_port, &serial_params))
+	{
+		CloseHandle(com_port);
+		return INVALID_HANDLE_VALUE;
+	}
+	COMMTIMEOUTS timeouts = { 0 };
+	timeouts.ReadIntervalTimeout = 300;
+	SetCommTimeouts(com_port, &timeouts);
+#pragma endregion	
+	return com_port;
+}
+std::tstring MakeCOMName(unsigned dev_id)
+{
+	TCHAR dev_name[DEV_NAME_SIZE];
+	_stprintf_s(dev_name, DEV_NAME_SIZE, _T("COM%d"), dev_id);
+	return dev_name;
 }
