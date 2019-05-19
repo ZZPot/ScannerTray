@@ -141,7 +141,6 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 }
 LRESULT OnCloseMain(HWND hWnd)
 {
-	EndDialog(hWnd, 0);
 	rtp* rp = (rtp*)GetProp(hWnd, TRAY_PROP_NAME);
 	if (rp != nullptr)
 	{
