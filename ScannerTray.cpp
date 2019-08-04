@@ -45,6 +45,10 @@ INT WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR ptCmdLine, int nCmdShow)
 		CloseHandle(hEvent);
 		return 1;
 	}
+	cmline.AddOption(_T("-pref"), true, _T("prefix"));
+	cmline.AddOption(_T("-post"), true, _T("postfix"));
+	cmline.AddOption(_T("-dev"), true, _T("device"));
+	cmline.SetCmd(ptCmdLine);
 #pragma region creating window
 	WNDCLASS wnd_class;
 	ZeroMemory(&wnd_class, sizeof(wnd_class));
@@ -55,10 +59,7 @@ INT WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR ptCmdLine, int nCmdShow)
 	RegisterClass(&wnd_class);
 	CreateWindow(MAIN_WINDOW_CNAME, _T(""), 0, 0, 0, 50, 50, NULL, NULL, NULL, 0);
 #pragma endregion
-	cmline.AddOption(_T("-pref"), true, _T("prefix"));
-	cmline.AddOption(_T("-post"), true, _T("postfix"));
-	cmline.AddOption(_T("-dev"), true, _T("device"));
-	cmline.SetCmd(ptCmdLine);
+	
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
