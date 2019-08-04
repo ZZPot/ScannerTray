@@ -16,6 +16,7 @@ std::vector<HICON> LoadIcons(UINT initial, unsigned count); // All resources sho
 std::vector<unsigned> GetCOMdevices();
 HANDLE OpenComDevice(unsigned dev_id);
 std::tstring MakeCOMName(unsigned dev_id);
+//Read thread param
 struct rtp
 {
 	~rtp() // just for handle this handles, lol
@@ -30,6 +31,8 @@ struct rtp
 	unsigned cur_dev;
 	TrayIcon *ti;
 };
+bool SelectCOMdevice(unsigned dev_id, rtp* param);
+
 
 CmdLine cmline;
 
@@ -54,6 +57,7 @@ INT WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR ptCmdLine, int nCmdShow)
 #pragma endregion
 	cmline.AddOption(_T("-pref"), true, _T("prefix"));
 	cmline.AddOption(_T("-post"), true, _T("postfix"));
+	cmline.AddOption(_T("-dev"), true, _T("device"));
 	cmline.SetCmd(ptCmdLine);
 	MSG msg;
 	while (GetMessage(&msg, NULL, 0, 0))
@@ -91,9 +95,11 @@ LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	}
 	AppendMenu(hPopupMenu, MF_STRING, IDC_EXIT, _T("Exit")); 
 
+	//Будет удалено в ~rtp()
 	TrayIcon* ti = new TrayIcon(hWnd, TRAY_MSG, TRAY_OBJ, GetModuleHandle(NULL), IDI_TRAY, _T("Barcode scanner"), TRUE, hPopupMenu);
 	std::vector<HICON> icon_anim = LoadIcons(IDI_TRAY1, 8);
 	ti->Animate(icon_anim);
+	//Будет удалено в OnCloseMain()
 	rtp* param = new rtp;
 	param->hEndEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	param->hDevSelectEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -101,11 +107,16 @@ LRESULT OnCreateMain(HWND hWnd, WPARAM wParam, LPARAM lParam)
 	SetProp(hWnd, TRAY_PROP_NAME, (HANDLE)param);
 	unsigned tid;
 	BeginThreadEx(NULL, 0, ReadThreadFunc, param, 0, &tid);
+	if (cmline.IsSet(_T("-dev")))
+	{
+		//Эмуляция выбора устройства
+		unsigned selected_dev = cmline.GetInt(_T("-dev"));
+		SelectCOMdevice(selected_dev, param);
+	}
 	return 0;
 }
 LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 {
-	static bool menu_visible = false;
 	if (uMsg == WM_LBUTTONUP)
 	{
 		rtp* rp = (rtp*)GetProp(hWnd, TRAY_PROP_NAME);
@@ -116,19 +127,10 @@ LRESULT OnTrayCommandMain(HWND hWnd, UINT uID, DWORD uMsg)
 			INT menu_sel = rp->ti->ShowMenu(cur.x, cur.y);
 			if(menu_sel == IDC_EXIT)
 				SendMessage(hWnd, WM_CLOSE, 0, 0);
-			if (menu_sel <= IDC_COM + 255 && menu_sel >= IDC_COM + 1)
-			{
-				rtp* rp = (rtp*)GetProp(hWnd, TRAY_PROP_NAME);
-				if (rp != nullptr)
-				{
-					rp->ti->Uncheck(rp->cur_dev + IDC_COM);
-					rp->cur_dev = menu_sel - IDC_COM;
-					rp->ti->Check(menu_sel);
-					SetEvent(rp->hDevSelectEvent);
-				}
-			}
+			SelectCOMdevice(unsigned(menu_sel - IDC_COM), rp);
 		}
 	}
+	// Тест анимации
 	/*if (uMsg == WM_RBUTTONUP)
 	{
 	TrayIcon* ti = (TrayIcon*)GetProp(hWnd, TRAY_PROP_NAME);
@@ -179,7 +181,7 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 		{
 			break;
 		}
-		if (wait_res == WAIT_OBJECT_0+2)
+		if (wait_res == WAIT_OBJECT_0 + 2)
 		{
 			static std::tstring str = _T("");
 			if (bytes_read && data[0] != '\0xa')
@@ -208,14 +210,18 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 		}
 		if (wait_res == WAIT_OBJECT_0 + 1)
 		{
-			CloseHandle(ovr.hEvent);
-			CloseHandle(com_port);
-			ovr.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-			wait_pack[2] = ovr.hEvent;
-			com_port = OpenComDevice(param->cur_dev);
-			if(com_port == INVALID_HANDLE_VALUE)
+			HANDLE com_port_tmp = OpenComDevice(param->cur_dev);
+			if (com_port_tmp == INVALID_HANDLE_VALUE)
 			{
 				param->ti->ShowBaloon(_T("Can't select device"));
+			}
+			else
+			{
+				CloseHandle(ovr.hEvent);
+				CloseHandle(com_port);
+				com_port = com_port_tmp;
+				ovr.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+				wait_pack[2] = ovr.hEvent;
 			}
 		}
 		ReadFile(com_port, &data, BYTES_TO_READ_COM1, &bytes_read, &ovr);
@@ -227,7 +233,6 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 
 void SendString(std::tstring str)
 {
-	HKL layout = LoadKeyboardLayout(_T("00000409"), KLF_ACTIVATE | KLF_NOTELLSHELL);
 	size_t len = str.length();
 	std::vector<INPUT> inp_v;
 	for(unsigned i = 0; i < len; i++)
@@ -274,9 +279,9 @@ HANDLE OpenComDevice(unsigned dev_id)
 	// Нужен FILE_FLAG_OVERLAPPED для реального порта
 	// Через переходник FILE_FLAG_OVERLAPPED не работает, считыавение происходит постоянно.
 	// Проблема в определении типа устройства
-	// Данное решение определяет тип устройства по его номеру
+	// Определяю тип устройства по его номеру (нет информации)
 	DWORD flags;
-	if(dev_id < 5)
+	if(dev_id < 3)
 		flags = FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED;
 	else
 		flags = FILE_ATTRIBUTE_NORMAL;
@@ -312,4 +317,17 @@ std::tstring MakeCOMName(unsigned dev_id)
 	TCHAR dev_name[DEV_NAME_SIZE];
 	_stprintf_s(dev_name, DEV_NAME_SIZE, _T("COM%d"), dev_id);
 	return dev_name;
+}
+bool SelectCOMdevice(unsigned dev_id, rtp* param)
+{
+	bool res = false;
+	if (dev_id <= 255 && dev_id >= 1)
+	{
+		param->ti->Uncheck(param->cur_dev + IDC_COM);
+		param->cur_dev = dev_id;
+		param->ti->Check(dev_id + IDC_COM);
+		SetEvent(param->hDevSelectEvent);
+		res = true;
+	}
+	return res;
 }
