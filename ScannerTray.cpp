@@ -4,6 +4,7 @@
 #include "resource.h"
 #include "TrayIcon\TrayIcon.h"
 #include "common.h"
+#include "CmdLine\CmdLine.h"
 #include <algorithm>
 
 LRESULT CALLBACK MainWndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
