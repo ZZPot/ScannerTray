@@ -187,10 +187,13 @@ unsigned __stdcall ReadThreadFunc(PVOID arg)
 			static std::tstring str = _T("");
 			if (bytes_read && data[0] != '\0xa')
 			{
+				/* //some crap
+
 				if(str.length() == 16)
 				{
 					GetLastError();
-				}
+				}*/
+
 				bool more_data = (data[bytes_read-1] != '\n');
 				data[bytes_read] = '\0';
 				str += CharToTchar(data, CP_ACP);
